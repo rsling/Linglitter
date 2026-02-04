@@ -3,14 +3,9 @@
 Tools for building a bibliographic database of linguistics journal articles,
 intended to support systematic literature reviews.
 
-Part of the **Linguistics Litrev** project.
-
 ## The name
 
-On the one hand, this is about LINGuistic LITerature, hence LING-LITter.
-On the other hand, we're LITTERing the the planet, our community and our minds with mostly useless junk-sci literature.
-The name reflects this as well.
-Linglitter takes that the litterature and turns it into compact nuggets of knowledge to inspire truly useful research. 
+Linglitter takes the linguistics litter-ature (default: from 2005 through 2025) and turns it into compact nuggets of knowledge to inspire truly useful research ... or the destruction of linguistics as we know it.
 
 ## Contents
 
