@@ -361,5 +361,27 @@
       "0044-1449",
       "2366-2395"
     ]
+  },
+  {
+    "name": "Journal of Language Modelling",
+    "publisher": "Institute of Computer Science, Polish Academy of Sciences",
+    "issn": [
+      "2299-856X",
+      "2299-8470"
+    ]
+  },
+  {
+    "name": "Trends in Cognitive Sciences",
+    "publisher": "Elsevier",
+    "issn": [
+      "1364-6613"
+    ]
+  },
+  {
+    "name": "Syntactic Theory and Research",
+    "publisher": "Open Library of the Humanities",
+    "issn": [
+      "3049-8228"
+    ]
   }
 ]

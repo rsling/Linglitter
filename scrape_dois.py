@@ -46,9 +46,28 @@ def setup_db(db_path):
             volume       TEXT,
             issue        TEXT,
             pages        TEXT,
-            publisher    TEXT
+            publisher    TEXT,
+            availability TEXT,
+            source       TEXT,
+            attempts     INTEGER DEFAULT 0,
+            response     INTEGER DEFAULT 0,
+            timestamp    TEXT,
+            file         TEXT
         )
     """)
+    # Add new columns if they don't exist (for existing databases)
+    for col, coltype in [
+        ("availability", "TEXT"),
+        ("source", "TEXT"),
+        ("attempts", "INTEGER DEFAULT 0"),
+        ("response", "INTEGER DEFAULT 0"),
+        ("timestamp", "TEXT"),
+        ("file", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE articles ADD COLUMN {col} {coltype}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_year ON articles(year)
     """)
@@ -60,7 +79,11 @@ def setup_db(db_path):
 
 
 def upsert_article(conn, meta):
-    """Insert or replace an article record (DOI is the primary key)."""
+    """Insert or replace article metadata (DOI is the primary key).
+
+    On conflict, only updates bibliographic metadata fields — preserves
+    PDF-related fields (availability, source, attempts, response, timestamp, file).
+    """
     conn.execute("""
         INSERT INTO articles (doi, title, authors, journal, year,
                               volume, issue, pages, publisher)
