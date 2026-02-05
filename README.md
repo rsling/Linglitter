@@ -217,6 +217,29 @@ python scrape_pdfs.py --config myconfig.json
 5. If OA: downloads PDF to `<data_dir>/<publisher>/<journal>/<year>/<doi>.pdf`
 6. Updates database with availability status, source URL, attempt count, HTTP response, and file path
 
+### Anti-scraping measures
+
+The script uses browser-like headers, session cookies, and visits article landing
+pages before downloading PDFs to work around publisher anti-scraping measures.
+Downloaded files are verified using Content-Type headers and PDF magic bytes
+(`%PDF-`) to detect when publishers serve HTML instead of PDF.
+
+### Publisher compatibility
+
+| Status | Publishers |
+|---|---|
+| Working | MDPI, OUP, PMC/NIH, De Gruyter, Benjamins, many others |
+| HTML only | Wiley, Elsevier (some articles) — free HTML, paywalled PDF |
+| Blocked | MIT Press (some subdomains) |
+
+### Known limitations
+
+- **HTML-only access**: Some publishers (Wiley, Elsevier) provide free HTML but
+  require payment for PDF. These are correctly detected and skipped. Future
+  enhancement: HTML-to-PDF conversion for text extraction/RAG use cases.
+- **Aggressive anti-bot**: Some publishers may still block downloads. The script
+  records failed attempts in the database for later retry or manual review.
+
 ## config.json
 
 Configuration file for `scrape_pdfs.py`.

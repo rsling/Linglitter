@@ -174,12 +174,13 @@ def query_unpaywall(doi, mailto):
 
     Returns dict with keys:
     - is_oa: bool
-    - pdf_url: str or None (best OA location URL)
+    - pdf_url: str or None (direct PDF URL if available)
+    - landing_url: str or None (article landing page URL)
     - response_code: int
     """
     if not mailto:
         log.error("Unpaywall requires an email address (set 'mailto' in config)")
-        return {"is_oa": False, "pdf_url": None, "response_code": 0}
+        return {"is_oa": False, "pdf_url": None, "landing_url": None, "response_code": 0}
 
     url = f"{UNPAYWALL_API}/{quote(doi, safe='')}"
     params = {"email": mailto}
@@ -190,34 +191,37 @@ def query_unpaywall(doi, mailto):
 
         if code == 404:
             # DOI not found in Unpaywall
-            return {"is_oa": False, "pdf_url": None, "response_code": code}
+            return {"is_oa": False, "pdf_url": None, "landing_url": None, "response_code": code}
 
         if code != 200:
             log.warning("Unpaywall returned %d for %s", code, doi)
-            return {"is_oa": False, "pdf_url": None, "response_code": code}
+            return {"is_oa": False, "pdf_url": None, "landing_url": None, "response_code": code}
 
         data = resp.json()
         is_oa = data.get("is_oa", False)
 
         pdf_url = None
+        landing_url = None
         if is_oa:
             # Try best_oa_location first
             best = data.get("best_oa_location")
             if best:
-                pdf_url = best.get("url_for_pdf") or best.get("url")
+                pdf_url = best.get("url_for_pdf")
+                landing_url = best.get("url_for_landing_page") or best.get("url")
 
             # Fall back to other locations if needed
             if not pdf_url:
                 for loc in data.get("oa_locations", []):
-                    pdf_url = loc.get("url_for_pdf") or loc.get("url")
+                    pdf_url = loc.get("url_for_pdf")
+                    landing_url = loc.get("url_for_landing_page") or loc.get("url")
                     if pdf_url:
                         break
 
-        return {"is_oa": is_oa, "pdf_url": pdf_url, "response_code": code}
+        return {"is_oa": is_oa, "pdf_url": pdf_url, "landing_url": landing_url, "response_code": code}
 
     except requests.exceptions.RequestException as exc:
         log.warning("Unpaywall request failed for %s: %s", doi, exc)
-        return {"is_oa": False, "pdf_url": None, "response_code": 0}
+        return {"is_oa": False, "pdf_url": None, "landing_url": None, "response_code": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -249,32 +253,71 @@ def build_pdf_path(data_dir, publisher, journal, year, doi):
     return absolute, str(relative)
 
 
-def download_pdf(url, dest_path, timeout=60):
+def download_pdf(pdf_url, dest_path, landing_url=None, timeout=60):
     """Download a PDF from a URL.
+
+    If landing_url is provided, first visits the landing page to collect
+    session cookies, then downloads the PDF. This helps with publishers
+    that require cookies for PDF access.
 
     Returns (success, http_status_code).
     """
-    # Build referer from URL domain
-    parsed = urlparse(url)
-    referer = f"{parsed.scheme}://{parsed.netloc}/"
-
+    # Browser-like headers including modern Sec-Fetch headers
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "DNT": "1",
+        "Sec-GPC": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
-        "Referer": referer,
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Priority": "u=0, i",
     }
+
+    # Use a session to persist cookies across requests
+    session = requests.Session()
+    session.headers.update(headers)
+
     try:
-        resp = requests.get(url, timeout=timeout, stream=True, headers=headers,
-                           allow_redirects=True)
+        # First visit landing page to collect cookies if provided
+        if landing_url:
+            log.debug("  Visiting landing page for cookies: %s", landing_url)
+            try:
+                landing_resp = session.get(landing_url, timeout=timeout, allow_redirects=True)
+                log.debug("  Landing page status: %d, cookies: %d",
+                         landing_resp.status_code, len(session.cookies))
+                # Small delay to appear more human-like
+                time.sleep(0.5)
+            except requests.exceptions.RequestException as exc:
+                log.debug("  Landing page visit failed: %s", exc)
+                # Continue anyway, might still work
+
+        # Set referer to landing page or PDF domain
+        parsed = urlparse(pdf_url)
+        referer = landing_url if landing_url else f"{parsed.scheme}://{parsed.netloc}/"
+        session.headers["Referer"] = referer
+        # Update Sec-Fetch for same-origin navigation
+        session.headers["Sec-Fetch-Site"] = "same-origin"
+
+        # Now fetch the PDF with PDF-specific Accept header
+        session.headers["Accept"] = "application/pdf,*/*;q=0.9"
+        resp = session.get(pdf_url, timeout=timeout, stream=True, allow_redirects=True)
         code = resp.status_code
 
         if code != 200:
-            log.warning("Download failed with status %d: %s", code, url)
+            log.warning("Download failed with status %d: %s", code, pdf_url)
             return False, code
+
+        # Check Content-Type to ensure we got a PDF, not an HTML error page
+        content_type = resp.headers.get("Content-Type", "").lower()
+        if "html" in content_type:
+            log.warning("Got HTML instead of PDF (Content-Type: %s): %s", content_type, pdf_url)
+            return False, 403  # Treat as forbidden
 
         # Ensure directory exists
         dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -284,11 +327,19 @@ def download_pdf(url, dest_path, timeout=60):
             for chunk in resp.iter_content(chunk_size=8192):
                 fh.write(chunk)
 
-        # Verify we got something reasonable
+        # Verify we got something reasonable (and it's actually a PDF)
         if dest_path.stat().st_size < 1000:
             log.warning("Downloaded file suspiciously small: %s", dest_path)
             dest_path.unlink()
             return False, code
+
+        # Check PDF magic bytes
+        with open(dest_path, "rb") as fh:
+            magic = fh.read(5)
+        if magic != b"%PDF-":
+            log.warning("Downloaded file is not a PDF (magic: %s): %s", magic[:20], dest_path)
+            dest_path.unlink()
+            return False, 403
 
         return True, code
 
@@ -367,6 +418,8 @@ def process_one(conn, config, dry_run=False):
         return "no-oa", doi
 
     pdf_url = result["pdf_url"]
+    landing_url = result["landing_url"]
+
     if not pdf_url:
         log.warning("  OA but no PDF URL found")
         update_article(conn, doi,
@@ -379,12 +432,14 @@ def process_one(conn, config, dry_run=False):
         return "failed", doi
 
     log.info("  OA PDF: %s", pdf_url)
+    if landing_url:
+        log.debug("  Landing page: %s", landing_url)
 
     # Build paths
     abs_path, rel_path = build_pdf_path(data_dir, publisher, journal, year, doi)
 
-    # Download
-    success, http_code = download_pdf(pdf_url, abs_path)
+    # Download (visit landing page first to collect cookies)
+    success, http_code = download_pdf(pdf_url, abs_path, landing_url=landing_url)
 
     if success:
         log.info("  Downloaded: %s", rel_path)
