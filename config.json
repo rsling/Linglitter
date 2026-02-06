@@ -1,5 +1,5 @@
 {
-  "years": [2020, 2025],
+  "years": [2005, 2025],
   "journals": [
     "Cognitive Linguistics",
     "Cognitive Linguistic Studies",
@@ -56,8 +56,8 @@
   "data_dir": "data",
   "unpaywall": {
     "mailto": "",
-    "politeness_interval": 2.0,
-    "publisher_interval": 180.0,
+    "politeness_interval": 1.0,
+    "publisher_interval": 300.0,
     "max_attempts": 3
   }
 }
