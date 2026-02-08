@@ -28,6 +28,23 @@ RETRY_BACKOFF = 2  # seconds, doubled on each retry
 log = logging.getLogger(__name__)
 
 
+class UnknownPublisherError(Exception):
+    """Raised when a publisher from CrossRef is not in publishers.json."""
+    pass
+
+
+def load_publisher_aliases(path):
+    """Load publishers.json and build alias -> canonical name mapping."""
+    with open(path) as fh:
+        publishers = json.load(fh)
+    alias_map = {}
+    for p in publishers:
+        canonical = p["publisher"]
+        for alias in p["aliases"]:
+            alias_map[alias] = canonical
+    return alias_map
+
+
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
@@ -173,8 +190,13 @@ def fetch_journal_works(issn, from_year, until_year, mailto=None):
 # Metadata extraction
 # ---------------------------------------------------------------------------
 
-def extract_metadata(item, publisher_name):
-    """Turn a CrossRef work item into a flat dict for the database."""
+def extract_metadata(item, publisher_alias_map):
+    """Turn a CrossRef work item into a flat dict for the database.
+
+    Translates the publisher name from CrossRef to a canonical name
+    using publisher_alias_map. Raises UnknownPublisherError if the
+    publisher is not found in the mapping.
+    """
     doi = item.get("DOI", "")
 
     titles = item.get("title", [])
@@ -202,6 +224,15 @@ def extract_metadata(item, publisher_name):
     issue = item.get("issue", "")
     pages = item.get("page", "")
 
+    # Translate publisher using alias map
+    raw_publisher = item.get("publisher", "")
+    if raw_publisher not in publisher_alias_map:
+        raise UnknownPublisherError(
+            f"Unknown publisher '{raw_publisher}' for DOI {doi}. "
+            "Add it to publishers.json before continuing."
+        )
+    publisher = publisher_alias_map[raw_publisher]
+
     return {
         "doi": doi,
         "title": title,
@@ -211,7 +242,7 @@ def extract_metadata(item, publisher_name):
         "volume": volume,
         "issue": issue,
         "pages": pages,
-        "publisher": publisher_name,
+        "publisher": publisher,
     }
 
 
@@ -248,6 +279,8 @@ def main():
                         help="Path to SQLite database (default: linglitter.db)")
     parser.add_argument("--journals-file", type=str, default="journals.json",
                         help="Path to journal registry JSON (default: journals.json)")
+    parser.add_argument("--publishers-file", type=str, default="publishers.json",
+                        help="Path to publisher aliases JSON (default: publishers.json)")
     parser.add_argument("--mailto", type=str, default=None,
                         help="Email for CrossRef polite pool (faster rate limits)")
     args = parser.parse_args()
@@ -263,6 +296,15 @@ def main():
         log.error("Journal registry not found: %s", journals_path)
         return 1
 
+    publishers_path = Path(args.publishers_file)
+    if not publishers_path.exists():
+        log.error("Publisher aliases file not found: %s", publishers_path)
+        return 1
+
+    publisher_alias_map = load_publisher_aliases(publishers_path)
+    log.info("Loaded %d publisher aliases from %s",
+             len(publisher_alias_map), publishers_path)
+
     journals = load_journals(journals_path, args.journal, args.publisher)
     if not journals:
         log.error("No matching journals found in %s", journals_path)
@@ -274,29 +316,34 @@ def main():
     conn = setup_db(args.db)
     total = 0
 
-    for jrnl in journals:
-        name = jrnl["name"]
-        publisher = jrnl["publisher"]
-        issns = jrnl["issn"]
-        count = 0
+    try:
+        for jrnl in journals:
+            name = jrnl["name"]
+            issns = jrnl["issn"]
+            count = 0
 
-        log.info("── %s  [%s]", name, publisher)
+            log.info("── %s", name)
 
-        for issn in issns:
-            for item in fetch_journal_works(issn, args.from_year,
-                                            args.until_year, args.mailto):
-                meta = extract_metadata(item, publisher)
-                if not meta["doi"]:
-                    continue
-                upsert_article(conn, meta)
-                count += 1
-                if count % 100 == 0:
-                    conn.commit()
-                    log.info("   … %d articles", count)
+            for issn in issns:
+                for item in fetch_journal_works(issn, args.from_year,
+                                                args.until_year, args.mailto):
+                    meta = extract_metadata(item, publisher_alias_map)
+                    if not meta["doi"]:
+                        continue
+                    upsert_article(conn, meta)
+                    count += 1
+                    if count % 100 == 0:
+                        conn.commit()
+                        log.info("   … %d articles", count)
 
-        conn.commit()
-        total += count
-        log.info("   %d articles saved", count)
+            conn.commit()
+            total += count
+            log.info("   %d articles saved", count)
+
+    except UnknownPublisherError as exc:
+        log.error("Stopping: %s", exc)
+        conn.close()
+        return 1
 
     conn.close()
     log.info("Done — %d articles total in %s", total, args.db)
