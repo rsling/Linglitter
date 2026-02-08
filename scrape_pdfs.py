@@ -47,7 +47,7 @@ BROWSER_HEADERS = {
     "Priority": "u=0, i",
 }
 
-# Per-publisher session storage to maintain cookies across downloads
+# Per-publisher session storage: {publisher: (session, last_used_datetime)}
 _publisher_sessions = {}
 
 
@@ -57,14 +57,23 @@ def get_publisher_session(publisher):
     Sessions are reused across downloads from the same publisher,
     preserving cookies and appearing more like normal browser behavior.
 
-    Returns (session, is_new) where is_new indicates if a fresh session was created.
+    Returns (session, is_new, elapsed_str) where:
+    - is_new: True if a fresh session was created
+    - elapsed_str: For continued sessions, time since last use as "HH:MM"
     """
+    now = datetime.now()
     if publisher not in _publisher_sessions:
         session = requests.Session()
         session.headers.update(BROWSER_HEADERS)
-        _publisher_sessions[publisher] = session
-        return session, True
-    return _publisher_sessions[publisher], False
+        _publisher_sessions[publisher] = (session, now)
+        return session, True, None
+    session, last_used = _publisher_sessions[publisher]
+    elapsed = now - last_used
+    total_minutes = int(elapsed.total_seconds() // 60)
+    hours, minutes = divmod(total_minutes, 60)
+    elapsed_str = f"{hours:02d}:{minutes:02d}"
+    _publisher_sessions[publisher] = (session, now)
+    return session, False, elapsed_str
 
 
 # ---------------------------------------------------------------------------
@@ -462,13 +471,13 @@ def process_one(conn, config, dry_run=False):
     abs_path, rel_path = build_pdf_path(data_dir, publisher, journal, year, doi)
 
     # Get or create session for this publisher (preserves cookies across downloads)
-    session, is_new_session = get_publisher_session(publisher)
+    session, is_new_session, elapsed_str = get_publisher_session(publisher)
     parsed_url = urlparse(pdf_url)
     server_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
     if is_new_session:
         log.info("  Session started: %s (%s)", publisher, server_url)
     else:
-        log.info("  Session continued: %s (%s)", publisher, server_url)
+        log.info("  Session continued: %s (%s) [%s]", publisher, server_url, elapsed_str)
 
     # Download (visit landing page first to collect cookies)
     success, http_code = download_pdf(pdf_url, abs_path, landing_url=landing_url, session=session)
