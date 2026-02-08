@@ -30,6 +30,40 @@ UNPAYWALL_API = "https://api.unpaywall.org/v2"
 
 log = logging.getLogger(__name__)
 
+# Browser-like headers for session requests
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "DNT": "1",
+    "Sec-GPC": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Priority": "u=0, i",
+}
+
+# Per-publisher session storage to maintain cookies across downloads
+_publisher_sessions = {}
+
+
+def get_publisher_session(publisher):
+    """Get or create a requests session for a publisher.
+
+    Sessions are reused across downloads from the same publisher,
+    preserving cookies and appearing more like normal browser behavior.
+    """
+    if publisher not in _publisher_sessions:
+        session = requests.Session()
+        session.headers.update(BROWSER_HEADERS)
+        _publisher_sessions[publisher] = session
+        log.debug("Created new session for publisher: %s", publisher)
+    return _publisher_sessions[publisher]
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -253,35 +287,22 @@ def build_pdf_path(data_dir, publisher, journal, year, doi):
     return absolute, str(relative)
 
 
-def download_pdf(pdf_url, dest_path, landing_url=None, timeout=60):
+def download_pdf(pdf_url, dest_path, landing_url=None, timeout=60, session=None):
     """Download a PDF from a URL.
 
     If landing_url is provided, first visits the landing page to collect
     session cookies, then downloads the PDF. This helps with publishers
     that require cookies for PDF access.
 
+    If session is provided, uses that session (preserving cookies from
+    previous requests to the same publisher). Otherwise creates a new session.
+
     Returns (success, http_status_code).
     """
-    # Browser-like headers including modern Sec-Fetch headers
-    headers = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "DNT": "1",
-        "Sec-GPC": "1",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Priority": "u=0, i",
-    }
-
-    # Use a session to persist cookies across requests
-    session = requests.Session()
-    session.headers.update(headers)
+    # Use provided session or create a new one
+    if session is None:
+        session = requests.Session()
+        session.headers.update(BROWSER_HEADERS)
 
     try:
         # First visit landing page to collect cookies if provided
@@ -438,8 +459,11 @@ def process_one(conn, config, dry_run=False):
     # Build paths
     abs_path, rel_path = build_pdf_path(data_dir, publisher, journal, year, doi)
 
+    # Get or create session for this publisher (preserves cookies across downloads)
+    session = get_publisher_session(publisher)
+
     # Download (visit landing page first to collect cookies)
-    success, http_code = download_pdf(pdf_url, abs_path, landing_url=landing_url)
+    success, http_code = download_pdf(pdf_url, abs_path, landing_url=landing_url, session=session)
 
     if success:
         log.info("  Downloaded: %s", rel_path)
