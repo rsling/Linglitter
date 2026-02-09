@@ -331,10 +331,12 @@ def process_one(conn, config, dry_run=False):
     politeness_min = local_cfg.get("politeness_min", 180)
     politeness_random = local_cfg.get("politeness_random", 20)
 
-    # Filter to only active (non-disabled) repositories
+    # Filter to only active (non-disabled) repositories and shuffle
+    # to distribute load evenly across repos
     active_repos = get_active_repos(repos, max_repo_failures)
     if not active_repos:
         return "all_disabled", None
+    random.shuffle(active_repos)
 
     # Get a random non-OA candidate
     candidate = get_random_nonoa_candidate(conn, years, journals)
