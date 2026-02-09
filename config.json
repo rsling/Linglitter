@@ -56,8 +56,14 @@
   "data_dir": "data",
   "unpaywall": {
     "mailto": "",
-    "politeness_interval": 0,
-    "publisher_interval": 240.0,
+    "politeness_interval": 3,
+    "publisher_interval": 360.0,
     "max_attempts": 5
+  },
+  "local": {
+    "repos": [],
+    "politeness_min": 180,
+    "politeness_random": 20,
+    "max_repo_failures": 10
   }
 }

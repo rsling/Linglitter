@@ -13,6 +13,7 @@ Linglitter takes the linguistics litter-ature (default: from 2005 through 2025) 
 |---|---|
 | `scrape_dois.py` | Fetches DOIs and metadata from the CrossRef API for journals listed in `journals.json` |
 | `scrape_pdfs.py` | Downloads open-access PDFs using the Unpaywall API |
+| `scrape_repo.py` | Downloads PDFs from institutional repositories for non-OA articles |
 | `lookup_issns.py` | Interactive helper to look up ISSNs via CrossRef and add journals to `journals.json` |
 | `journals.json` | Registry of target journals (name, publisher, ISSN) |
 | `config.json` | Configuration for PDF scraping (year range, journals, politeness settings) |
@@ -252,9 +253,82 @@ Downloaded files are verified using Content-Type headers and PDF magic bytes
 - **Aggressive anti-bot**: Some publishers may still block downloads. The script
   records failed attempts in the database for later retry or manual review.
 
+## scrape_repo.py
+
+Downloads PDFs from institutional repositories for articles marked as `no-oa`
+in the database. Useful when you have institutional access to repositories that
+provide PDFs not available via open access.
+
+### Usage
+
+```bash
+# Process one article (default)
+python scrape_repo.py
+
+# Process up to 100 articles
+python scrape_repo.py --limit 100
+
+# Run continuously until no candidates remain
+python scrape_repo.py --continuous
+
+# Preview without downloading
+python scrape_repo.py --dry-run
+```
+
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--config` | `config.json` | Path to configuration file |
+| `--db` | `linglitter.db` | Path to SQLite database |
+| `--limit` | none | Maximum number of articles to process |
+| `--continuous` | off | Run until no candidates remain |
+| `--dry-run` | off | Show what would be done without downloading |
+
+### How it works
+
+1. Selects a random article from the database where `availability = 'no-oa'` and `file IS NULL`
+2. Fetches the landing page from each configured repository (`repo_url + DOI`)
+3. Parses the HTML to find a download link (`<div class="download">` with `<a href>`)
+4. If no download link found: skips to next DOI (article not available in repos)
+5. Downloads the PDF from the extracted link
+6. Saves to `<data_dir>/<publisher>/<journal>/<year>/<doi>.pdf`
+7. Updates database with `availability = 'repo'` on success
+
+### Repository failure tracking
+
+Each repository is allowed a configurable number of failed fetch attempts
+(`max_repo_failures`, default 10). Once a repository exceeds this limit, it is
+disabled for the current session. When all repositories are disabled, the script
+exits with an error message.
+
+### Configuration
+
+Add the `local` section to `config.json`:
+
+```json
+{
+  "local": {
+    "repos": [
+      "https://repo.example.edu/resolve/"
+    ],
+    "politeness_min": 180,
+    "politeness_random": 20,
+    "max_repo_failures": 10
+  }
+}
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `repos` | `[]` | List of repository URL prefixes (DOI is appended) |
+| `politeness_min` | `180` | Minimum seconds between fetch attempts |
+| `politeness_random` | `20` | Additional random delay (5 to this value) |
+| `max_repo_failures` | `10` | Disable repo after this many failures |
+
 ## config.json
 
-Configuration file for `scrape_pdfs.py`.
+Configuration file for `scrape_pdfs.py` and `scrape_repo.py`.
 
 ```json
 {
@@ -266,6 +340,12 @@ Configuration file for `scrape_pdfs.py`.
     "politeness_interval": 1.0,
     "publisher_interval": 5.0,
     "max_attempts": 3
+  },
+  "local": {
+    "repos": ["https://repo.example.edu/resolve/"],
+    "politeness_min": 180,
+    "politeness_random": 20,
+    "max_repo_failures": 10
   }
 }
 ```
@@ -279,6 +359,10 @@ Configuration file for `scrape_pdfs.py`.
 | `unpaywall.politeness_interval` | Seconds between any two download attempts |
 | `unpaywall.publisher_interval` | Seconds between attempts from the same publisher |
 | `unpaywall.max_attempts` | Give up after this many failed attempts per article |
+| `local.repos` | List of repository URL prefixes for `scrape_repo.py` |
+| `local.politeness_min` | Minimum seconds between repository fetch attempts |
+| `local.politeness_random` | Additional random delay (5 to this value) |
+| `local.max_repo_failures` | Disable repository after this many failures |
 
 ## Bibliometrics (R scripts)
 
