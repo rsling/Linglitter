@@ -89,7 +89,7 @@ Table: `articles`
 | `issue` | TEXT | |
 | `pages` | TEXT | e.g. `261-296` |
 | `publisher` | TEXT | From `journals.json` |
-| `availability` | TEXT | `oa`, `no-oa`, or NULL (unknown) |
+| `availability` | TEXT | `oa`, `no-oa`, `repo`, `manual`, or NULL (unknown) |
 | `source` | TEXT | PDF URL from Unpaywall |
 | `attempts` | INTEGER | Download attempt count (default 0) |
 | `response` | INTEGER | HTTP status code (0 = no attempt) |
@@ -290,7 +290,7 @@ python scrape_repo.py --dry-run
 1. Selects a random article from the database where `availability = 'no-oa'` and `file IS NULL`
 2. Fetches the landing page from each configured repository (`repo_url + DOI`)
 3. Parses the HTML to find a download link (`<div class="download">` with `<a href>`)
-4. If no download link found: skips to next DOI (article not available in repos)
+4. If no download link found: sets `availability = 'manual'` (queued for manual download) and skips to next DOI with minimal delay
 5. Downloads the PDF from the extracted link
 6. Saves to `<data_dir>/<publisher>/<journal>/<year>/<doi>.pdf`
 7. Updates database with `availability = 'repo'` on success
@@ -314,6 +314,7 @@ Add the `local` section to `config.json`:
     ],
     "politeness_min": 180,
     "politeness_random": 20,
+    "politeness_skip": 1,
     "max_repo_failures": 10
   }
 }
@@ -324,6 +325,7 @@ Add the `local` section to `config.json`:
 | `repos` | `[]` | List of repository URL prefixes (DOI is appended) |
 | `politeness_min` | `180` | Minimum seconds between fetch attempts |
 | `politeness_random` | `20` | Additional random delay (5 to this value) |
+| `politeness_skip` | `1` | Seconds to wait when no download link found (no PDF downloaded) |
 | `max_repo_failures` | `10` | Disable repo after this many failures |
 
 ## config.json
@@ -345,6 +347,7 @@ Configuration file for `scrape_pdfs.py` and `scrape_repo.py`.
     "repos": ["https://repo.example.edu/resolve/"],
     "politeness_min": 180,
     "politeness_random": 20,
+    "politeness_skip": 1,
     "max_repo_failures": 10
   }
 }
@@ -362,6 +365,7 @@ Configuration file for `scrape_pdfs.py` and `scrape_repo.py`.
 | `local.repos` | List of repository URL prefixes for `scrape_repo.py` |
 | `local.politeness_min` | Minimum seconds between repository fetch attempts |
 | `local.politeness_random` | Additional random delay (5 to this value) |
+| `local.politeness_skip` | Seconds to wait when no download link found (default 1) |
 | `local.max_repo_failures` | Disable repository after this many failures |
 
 ## Bibliometrics (R scripts)

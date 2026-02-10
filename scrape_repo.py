@@ -399,11 +399,12 @@ def process_one(conn, config, dry_run=False):
 
         if download_href is None:
             # Got HTML but no download link - skip to next DOI (other repos won't have it either)
+            # Mark as 'manual' so scraping scripts won't touch it again; queued for manual download
             log.warning("  Download link not found in HTML (no <div class=\"download\"> with <a href>). No PDF saved.")
-            log.info("  Skipping to next DOI (article not available for download).")
+            log.info("  Skipping to next DOI (article not available for download, marked for manual download).")
             attempts += 1
             update_article(conn, doi,
-                          availability="no-oa",
+                          availability="manual",
                           source=None,
                           attempts=attempts,
                           response=http_code,
@@ -510,6 +511,7 @@ def main():
     # Get politeness settings
     politeness_min = local_cfg.get("politeness_min", 180)
     politeness_random = local_cfg.get("politeness_random", 20)
+    politeness_skip = local_cfg.get("politeness_skip", 1)
 
     # Stats
     stats = {"downloaded": 0, "failed": 0, "skipped": 0, "no_download_link": 0}
@@ -549,12 +551,19 @@ def main():
             if not args.continuous and result in ("downloaded", "failed", "no_download_link"):
                 break
 
-            # Wait politeness_min plus random 5 to politeness_random seconds
-            random_wait = random.randint(5, politeness_random)
-            total_wait = politeness_min + random_wait
-            log.info("Waiting %d seconds before next DOI (base %d + random %d)...",
-                     total_wait, politeness_min, random_wait)
-            time.sleep(total_wait)
+            # Wait before next DOI
+            if result == "no_download_link":
+                # No PDF downloaded, use minimal wait (no random component)
+                log.info("Waiting %d seconds before next DOI (skip delay, no PDF downloaded)...",
+                         politeness_skip)
+                time.sleep(politeness_skip)
+            else:
+                # PDF was downloaded or attempted, use full politeness wait
+                random_wait = random.randint(5, politeness_random)
+                total_wait = politeness_min + random_wait
+                log.info("Waiting %d seconds before next DOI (base %d + random %d)...",
+                         total_wait, politeness_min, random_wait)
+                time.sleep(total_wait)
 
     except KeyboardInterrupt:
         log.info("Interrupted by user")

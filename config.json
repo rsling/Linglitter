@@ -64,6 +64,7 @@
     "repos": [],
     "politeness_min": 180,
     "politeness_random": 20,
+    "politeness_skip": 1,
     "max_repo_failures": 10
   }
 }
