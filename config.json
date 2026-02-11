@@ -65,6 +65,23 @@
     "politeness_min": 180,
     "politeness_random": 20,
     "politeness_skip": 1,
-    "max_repo_failures": 10
+    "max_repo_failures": 10,
+    "cooldown_probability": 0.1,
+    "cooldown_min": 60,
+    "cooldown_max": 180
+  },
+  "glossa": {
+    "start_url": "https://www.glossa-journal.org/issues/",
+    "domain": "www.glossa-journal.org",
+    "article_prefix": "https://www.glossa-journal.org/article/id/",
+    "db_journal": "Glossa: a journal of general linguistics",
+    "politeness": 15
+  },
+  "star": {
+    "start_url": "https://star-linguistics.org/issues/",
+    "domain": "star-linguistics.org",
+    "article_prefix": "https://star-linguistics.org/article/id/",
+    "db_journal": "Syntactic Theory and Research",
+    "politeness": 15
   }
 }

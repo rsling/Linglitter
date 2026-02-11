@@ -513,6 +513,20 @@ def main():
     politeness_random = local_cfg.get("politeness_random", 20)
     politeness_skip = local_cfg.get("politeness_skip", 1)
 
+    # Get cooldown settings with validation
+    cooldown_probability = local_cfg.get("cooldown_probability", 0.1)
+    cooldown_min = local_cfg.get("cooldown_min", 60)
+    cooldown_max = local_cfg.get("cooldown_max", 180)
+
+    if cooldown_probability < 0.01:
+        log.warning("cooldown_probability %.3f is below minimum 0.01, setting to 0.01",
+                    cooldown_probability)
+        cooldown_probability = 0.01
+    elif cooldown_probability > 0.99:
+        log.warning("cooldown_probability %.3f exceeds maximum 0.99, setting to 0.99",
+                    cooldown_probability)
+        cooldown_probability = 0.99
+
     # Stats
     stats = {"downloaded": 0, "failed": 0, "skipped": 0, "no_download_link": 0}
     processed = 0
@@ -564,6 +578,13 @@ def main():
                 log.info("Waiting %d seconds before next DOI (base %d + random %d)...",
                          total_wait, politeness_min, random_wait)
                 time.sleep(total_wait)
+
+            # Random cooldown to appear more human-like
+            if random.random() < cooldown_probability:
+                cooldown_duration = random.randint(cooldown_min, cooldown_max)
+                log.info("Cooldown triggered (p=%.2f): waiting %d seconds...",
+                         cooldown_probability, cooldown_duration)
+                time.sleep(cooldown_duration)
 
     except KeyboardInterrupt:
         log.info("Interrupted by user")
