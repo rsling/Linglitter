@@ -59,7 +59,6 @@ JOURNALS_TO_ADD = [
     "Zeitschrift für germanistische Linguistik",
     "Linguistische Berichte",
     "Germanistische Linguistik",
-    "Zeitschrift für Dialektologie und Linguistik",
 ]
 
 
