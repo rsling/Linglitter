@@ -14,6 +14,10 @@ Linglitter takes the linguistics litter-ature (default: from 2005 through 2025) 
 | `scrape_dois.py` | Fetches DOIs and metadata from the CrossRef API for journals listed in `journals.json` |
 | `scrape_pdfs.py` | Downloads open-access PDFs using the Unpaywall API |
 | `scrape_repo.py` | Downloads PDFs from institutional repositories for non-OA articles |
+| `scrape_openlibhum.py` | Crawls Open Library of Humanities journal websites to download PDFs |
+| `prepare_manual.py` | Generates HTML list of articles requiring manual download |
+| `integrate_manual.py` | Integrates manually downloaded PDFs (DOI-named) into data directory |
+| `integrate_renaming.py` | Integrates manually downloaded PDFs (title-named) via fuzzy matching |
 | `lookup_issns.py` | Interactive helper to look up ISSNs via CrossRef and add journals to `journals.json` |
 | `journals.json` | Registry of target journals (name, publisher, ISSN) |
 | `config.json` | Configuration for PDF scraping (year range, journals, politeness settings) |
@@ -328,15 +332,157 @@ Add the `local` section to `config.json`:
 | `politeness_skip` | `1` | Seconds to wait when no download link found (no PDF downloaded) |
 | `max_repo_failures` | `10` | Disable repo after this many failures |
 
+## Manual Download Workflow
+
+For articles that cannot be downloaded automatically (paywalled content requiring
+manual browser interaction), three scripts provide a workflow:
+
+1. `prepare_manual.py` — generates an HTML helper page for clicking through DOIs
+2. `integrate_manual.py` — integrates PDFs named with encoded DOIs
+3. `integrate_renaming.py` — integrates PDFs named with article titles (fuzzy matching)
+
+### prepare_manual.py
+
+Generates `manual.html` listing all articles marked for manual download
+(`availability = 'manual'` and `file IS NULL`). The HTML page includes:
+
+- Bibliographic citation for each article
+- Clickable DOI link (opens in new tab)
+- Encoded filename for saving the PDF
+- Status tracking (red/green dots) with localStorage persistence
+- Auto-copy of filename to clipboard when clicking a DOI link
+
+```bash
+python prepare_manual.py
+python prepare_manual.py --output downloads.html
+```
+
+### integrate_manual.py
+
+Integrates PDFs from the `manual_dir` directory (default: `manual/`). Files must
+be named with the DOI encoded for filesystem safety (same encoding as other scripts:
+`/ \ : * ? " < > | .` replaced with `_`), e.g., `10_1016_j_cognition_2022_105232.pdf`.
+
+```bash
+# Preview what would be done
+python integrate_manual.py --dry-run
+
+# Move files and update database
+python integrate_manual.py
+```
+
+The script:
+1. Matches each `{encoded_doi}.pdf` to a database entry
+2. Moves matched files to `data/{publisher}/{journal}/{year}/{encoded_doi}.pdf`
+3. Updates database: `source` = DOI URL, `file` = relative path
+4. Warns and leaves unmatched files in place
+
+### integrate_renaming.py
+
+Integrates PDFs from subdirectories of `renaming_dir` (default: `renaming/`).
+Subdirectory names must match journal names in the database exactly. Files are
+named with article titles (or title prefixes).
+
+```bash
+python integrate_renaming.py
+python integrate_renaming.py --threshold 70  # stricter matching
+```
+
+The script:
+1. Scans each journal subdirectory for PDF files
+2. Fuzzy-matches filenames against article titles in the database
+3. Presents best match with score (0-100) and asks for confirmation:
+   - **[Y]es** — rename to encoded DOI and move to data directory
+   - **[D]elete** — delete the file
+   - **[R]etain** — keep the file for manual handling
+4. If no match found, offers Delete or Retain options
+
+For better fuzzy matching, install `rapidfuzz`: `pip install --user rapidfuzz`
+
+## scrape_openlibhum.py
+
+Downloads PDFs from Open Library of Humanities journal websites (Glossa, STAR).
+These journals are not indexed by Unpaywall, so this script crawls their websites directly.
+
+### Usage
+
+```bash
+# Process Glossa (default)
+python scrape_openlibhum.py
+
+# Process STAR journal
+python scrape_openlibhum.py --journal star
+
+# Process up to 100 articles
+python scrape_openlibhum.py --limit 100
+
+# Preview without downloading
+python scrape_openlibhum.py --dry-run
+```
+
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--config` | `config.json` | Path to configuration file |
+| `--db` | `linglitter.db` | Path to SQLite database |
+| `--journal` | `glossa` | Journal to crawl (`glossa` or `star`) |
+| `--limit` | none | Maximum number of PDFs to download |
+| `--dry-run` | off | Show what would be done without downloading |
+
+### How it works
+
+1. Starts from a configurable URL (e.g., `https://www.glossa-journal.org/issues/`)
+2. Crawls internal links depth-first, staying on the journal domain
+3. When reaching an article page (`/article/id/...`):
+   - Extracts DOI from `<input id="share-link">` value attribute
+   - Extracts PDF link from `<a href>Download PDF</a>`
+   - Checks if DOI exists in database with matching journal and `file IS NULL`
+   - Downloads PDF and updates database with `availability = 'oa'`
+4. Respects politeness delay between all page fetches
+
+### Configuration
+
+Add journal sections to `config.json`:
+
+```json
+{
+  "glossa": {
+    "start_url": "https://www.glossa-journal.org/issues/",
+    "domain": "www.glossa-journal.org",
+    "article_prefix": "https://www.glossa-journal.org/article/id/",
+    "db_journal": "Glossa: a journal of general linguistics",
+    "politeness": 15
+  },
+  "star": {
+    "start_url": "https://star-linguistics.org/issues/",
+    "domain": "star-linguistics.org",
+    "article_prefix": "https://star-linguistics.org/article/id/",
+    "db_journal": "Syntactic Theory and Research",
+    "politeness": 15
+  }
+}
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `start_url` | — | URL to start crawling from |
+| `domain` | — | Domain to stay within during crawl |
+| `article_prefix` | — | URL prefix for article pages |
+| `db_journal` | — | Journal name as stored in database |
+| `politeness` | `15` | Seconds between page fetches |
+
 ## config.json
 
-Configuration file for `scrape_pdfs.py` and `scrape_repo.py`.
+Configuration file for PDF scraping and integration scripts.
 
 ```json
 {
   "years": [2020, 2025],
   "journals": ["Journal Name 1", "Journal Name 2"],
   "data_dir": "data",
+  "manual_dir": "manual",
+  "renaming_dir": "renaming",
   "unpaywall": {
     "mailto": "you@example.com",
     "politeness_interval": 1.0,
@@ -349,6 +495,10 @@ Configuration file for `scrape_pdfs.py` and `scrape_repo.py`.
     "politeness_random": 20,
     "politeness_skip": 1,
     "max_repo_failures": 10
+  },
+  "glossa": {
+    "start_url": "https://www.glossa-journal.org/issues/",
+    "politeness": 15
   }
 }
 ```
@@ -358,6 +508,8 @@ Configuration file for `scrape_pdfs.py` and `scrape_repo.py`.
 | `years` | `[start, end]` year range (inclusive) |
 | `journals` | List of journal names to process |
 | `data_dir` | Directory for downloaded PDFs (default: `data`) |
+| `manual_dir` | Directory for manually downloaded PDFs with DOI filenames (default: `manual`) |
+| `renaming_dir` | Directory for manually downloaded PDFs with title filenames (default: `renaming`) |
 | `unpaywall.mailto` | Email for Unpaywall API (or use `--mailto` flag) |
 | `unpaywall.politeness_interval` | Seconds between any two download attempts |
 | `unpaywall.publisher_interval` | Seconds between attempts from the same publisher |
@@ -367,6 +519,8 @@ Configuration file for `scrape_pdfs.py` and `scrape_repo.py`.
 | `local.politeness_random` | Additional random delay (5 to this value) |
 | `local.politeness_skip` | Seconds to wait when no download link found (default 1) |
 | `local.max_repo_failures` | Disable repository after this many failures |
+| `glossa.start_url` | URL to start crawling for Glossa PDFs |
+| `glossa.politeness` | Seconds between Glossa page fetches (default 15) |
 
 ## Bibliometrics (R scripts)
 
