@@ -69,7 +69,8 @@
     "max_repo_failures": 10,
     "cooldown_probability": 0.1,
     "cooldown_min": 60,
-    "cooldown_max": 180
+    "cooldown_max": 180,
+    "verify_cert": true
   },
   "glossa": {
     "start_url": "https://www.glossa-journal.org/issues/",

@@ -216,7 +216,7 @@ def extract_download_link(html_content):
     return href_match.group(1)
 
 
-def fetch_landing_page(page_url, timeout=60, session=None):
+def fetch_landing_page(page_url, timeout=60, session=None, verify=True):
     """Fetch the HTML landing page for an article.
 
     Uses minimal curl-like headers to avoid 403 errors from servers
@@ -230,7 +230,7 @@ def fetch_landing_page(page_url, timeout=60, session=None):
 
     try:
         # Keep headers minimal like curl
-        resp = session.get(page_url, timeout=timeout, allow_redirects=True)
+        resp = session.get(page_url, timeout=timeout, allow_redirects=True, verify=verify)
         code = resp.status_code
 
         if code != 200:
@@ -244,7 +244,7 @@ def fetch_landing_page(page_url, timeout=60, session=None):
         return None, 0
 
 
-def download_pdf_direct(pdf_url, dest_path, referer_url, timeout=60, session=None):
+def download_pdf_direct(pdf_url, dest_path, referer_url, timeout=60, session=None, verify=True):
     """Download a PDF from a direct URL.
 
     If session is provided, uses that session (preserving cookies from
@@ -262,7 +262,7 @@ def download_pdf_direct(pdf_url, dest_path, referer_url, timeout=60, session=Non
         # Keep headers minimal like curl, just add referer
         session.headers["Referer"] = referer_url
 
-        resp = session.get(pdf_url, timeout=timeout, stream=True, allow_redirects=True)
+        resp = session.get(pdf_url, timeout=timeout, stream=True, allow_redirects=True, verify=verify)
         code = resp.status_code
 
         if code != 200:
@@ -330,6 +330,7 @@ def process_one(conn, config, dry_run=False):
     max_repo_failures = local_cfg.get("max_repo_failures", 10)
     politeness_min = local_cfg.get("politeness_min", 180)
     politeness_random = local_cfg.get("politeness_random", 20)
+    verify_cert = local_cfg.get("verify_cert", True)
 
     # Filter to only active (non-disabled) repositories and shuffle
     # to distribute load evenly across repos
@@ -381,7 +382,7 @@ def process_one(conn, config, dry_run=False):
         log.info("  Fetching landing page: %s", landing_url)
 
         # Step 1: Fetch the HTML landing page
-        html_content, http_code = fetch_landing_page(landing_url, session=session)
+        html_content, http_code = fetch_landing_page(landing_url, session=session, verify=verify_cert)
 
         if html_content is None:
             log.info("  Landing page fetch failed (HTTP %d). No PDF saved.", http_code)
@@ -420,7 +421,7 @@ def process_one(conn, config, dry_run=False):
         time.sleep(0.5)
 
         # Step 4: Download the PDF
-        success, http_code = download_pdf_direct(pdf_url, abs_path, referer_url=landing_url, session=session)
+        success, http_code = download_pdf_direct(pdf_url, abs_path, referer_url=landing_url, session=session, verify=verify_cert)
 
         if success:
             log.info("  Downloaded: %s", rel_path)
@@ -531,6 +532,12 @@ def main():
     stats = {"downloaded": 0, "failed": 0, "skipped": 0, "no_download_link": 0}
     processed = 0
     max_repo_failures = local_cfg.get("max_repo_failures", 10)
+
+    verify_cert = local_cfg.get("verify_cert", True)
+    if not verify_cert:
+        log.warning("SSL certificate verification is DISABLED (verify_cert=false)")
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     log.info("Starting repository scraper (years %d–%d, %d journals, %d repos, max %d failures/repo)",
              config["years"][0], config["years"][1], len(config["journals"]),
