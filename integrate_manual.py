@@ -93,6 +93,56 @@ def get_pdf_files(manual_dir):
     return list(manual_path.glob("*.pdf"))
 
 
+def format_size(size_bytes):
+    """Format file size in human-readable form."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+def handle_existing_file(source_path, dest_path):
+    """Handle case where destination file already exists.
+
+    Prompts user to choose:
+    1. Leave both in place (skip this file)
+    2. Replace existing target with new file
+    3. Remove the new file instead of moving it
+
+    Returns: 'skip', 'replace', or 'remove'
+    """
+    source_size = source_path.stat().st_size
+    dest_size = dest_path.stat().st_size
+
+    print()
+    print("=" * 60)
+    print("FILE CONFLICT DETECTED")
+    print("=" * 60)
+    print(f"Source file:      {source_path}")
+    print(f"  Size:           {format_size(source_size)} ({source_size:,} bytes)")
+    print(f"Target file:      {dest_path}")
+    print(f"  Size:           {format_size(dest_size)} ({dest_size:,} bytes)")
+    print()
+    print("Options:")
+    print("  [1] Leave both in place (skip moving this file)")
+    print("  [2] Replace existing target with new file")
+    print("  [3] Remove the new file (delete from manual folder)")
+    print()
+
+    while True:
+        choice = input("Enter choice [1/2/3]: ").strip()
+        if choice == "1":
+            return "skip"
+        elif choice == "2":
+            return "replace"
+        elif choice == "3":
+            return "remove"
+        else:
+            print("Invalid choice. Please enter 1, 2, or 3.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Integrate manually downloaded PDFs into the data directory.")
@@ -145,6 +195,8 @@ def main():
     # Stats
     matched = 0
     unmatched = 0
+    skipped = 0
+    removed = 0
     errors = 0
 
     for pdf_path in pdf_files:
@@ -165,12 +217,31 @@ def main():
         if args.dry_run:
             log.info("  [DRY RUN] Would move to: %s", dest_rel)
             log.info("  [DRY RUN] Would set source: https://doi.org/%s", doi)
+            if dest_abs.exists():
+                log.info("  [DRY RUN] Note: target file already exists")
             matched += 1
             continue
 
         try:
             # Ensure destination directory exists
             dest_abs.parent.mkdir(parents=True, exist_ok=True)
+
+            # Check if destination file already exists
+            if dest_abs.exists():
+                action = handle_existing_file(pdf_path, dest_abs)
+
+                if action == "skip":
+                    log.info("  Skipped: leaving both files in place")
+                    skipped += 1
+                    continue
+                elif action == "remove":
+                    pdf_path.unlink()
+                    log.info("  Removed source file: %s", pdf_path.name)
+                    removed += 1
+                    continue
+                elif action == "replace":
+                    dest_abs.unlink()
+                    log.info("  Replacing existing target file")
 
             # Move the file
             shutil.move(str(pdf_path), str(dest_abs))
@@ -189,7 +260,8 @@ def main():
 
     conn.close()
 
-    log.info("Done — matched: %d, unmatched: %d, errors: %d", matched, unmatched, errors)
+    log.info("Done — matched: %d, unmatched: %d, skipped: %d, removed: %d, errors: %d",
+             matched, unmatched, skipped, removed, errors)
     return 0
 
 
