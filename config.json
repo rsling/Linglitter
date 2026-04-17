@@ -55,6 +55,8 @@
   "data_dir": "data",
   "manual_dir": "manual",
   "renaming_dir": "renaming",
+  "quarantine_dir": "quarantine",
+  "core_api_key": "LFoYhXIEm85yzBwvJuiftkxnTeUVPqrK",
   "unpaywall": {
     "mailto": "",
     "politeness_interval": 3,

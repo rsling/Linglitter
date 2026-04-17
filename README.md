@@ -93,14 +93,46 @@ Table: `articles`
 | `issue` | TEXT | |
 | `pages` | TEXT | e.g. `261-296` |
 | `publisher` | TEXT | From `journals.json` |
-| `availability` | TEXT | `oa`, `no-oa`, `repo`, `manual`, or NULL (unknown) |
-| `source` | TEXT | PDF URL from Unpaywall |
+| `availability` | TEXT | See [Availability status workflow](#availability-status-workflow) |
+| `source` | TEXT | URL the PDF was downloaded from |
 | `attempts` | INTEGER | Download attempt count (default 0) |
 | `response` | INTEGER | HTTP status code (0 = no attempt) |
 | `timestamp` | TEXT | ISO datetime of last attempt |
 | `file` | TEXT | Relative path to downloaded PDF |
 
 Indexed on `year` and `journal`.
+
+### Availability status workflow
+
+The `availability` column tracks each article through a pipeline of
+retrieval tools. Each tool picks up articles in a specific status and
+moves them forward:
+
+```
+                    scrape_pdfs.py               scrape_repo.py
+                    ──────────────               ──────────────
+  NULL (untried) ──→ "oa"  (success, file set)
+                  └→ "no-oa" (failed/not OA) ──→ "repo" (success, file set)
+                                               └→ "manual" (all tools failed)
+```
+
+| Status | Meaning | Set by | Picked up by |
+|---|---|---|---|
+| `NULL` | Not yet attempted | `scrape_dois.py` (initial) | `scrape_pdfs.py` |
+| `oa` | Open access, PDF downloaded | `scrape_pdfs.py` (success) | — (done) |
+| `no-oa` | Not available via OA sources | `scrape_pdfs.py` (failure) | `scrape_repo.py` |
+| `repo` | Downloaded from repository | `scrape_repo.py` (success) | — (done) |
+| `manual` | All automated tools failed | `scrape_repo.py` (failure) | `prepare_manual.py` |
+
+**Note on `no-oa` semantics**: This status is intentionally underspecified.
+It covers both articles that are genuinely not open access and articles that
+are OA but could not be downloaded by any automated source (bot-blocked,
+no PDF URL found, etc.). In either case, `scrape_repo.py` is the next tool
+to try.
+
+**Legacy status `recheck`**: Earlier versions of the tools used a `recheck`
+status for transient failures. This is no longer assigned by any tool.
+Existing `recheck` entries should be reset to `NULL` to re-enter the pipeline.
 
 ## journals.json
 
@@ -191,9 +223,14 @@ python lookup_issns.py --dry-run
 
 ## scrape_pdfs.py
 
-Downloads open-access PDFs using the [Unpaywall API](https://unpaywall.org/products/api).
-Queries Unpaywall for each DOI in the database, downloads available PDFs, and
-tracks download status.
+Downloads open-access PDFs using multiple OA sources. For each article, tries
+a cascade of services until a PDF is found or all sources are exhausted:
+
+1. **Unpaywall** — primary OA detection and PDF URL
+2. **Semantic Scholar** — often finds preprints and author-hosted copies
+3. **OpenAlex** — complementary OA coverage
+4. **CORE** — aggregates 300M+ documents from institutional repositories (requires free API key)
+5. **LingBuzz** — searches the linguistics preprint server by title (fuzzy matched)
 
 ### Usage
 
@@ -223,16 +260,18 @@ python scrape_pdfs.py --config myconfig.json
 | `--mailto` | none | Email for Unpaywall API (overrides config.json) |
 | `--limit` | none | Maximum number of articles to process |
 | `--continuous` | off | Run until no candidates remain |
+| `--reset-oa-attempts` | off | Reset attempt counters for failed OA articles (use after adding new sources) |
 | `--dry-run` | off | Show what would be done without downloading |
 
 ### How it works
 
-1. Selects a random article from the database (respecting year range and journal list in config)
-2. Skips articles already downloaded (`file IS NOT NULL`) or confirmed closed (`availability = 'no-oa'`)
-3. Checks politeness intervals (global and per-publisher)
-4. Queries Unpaywall API for the DOI
-5. If OA: downloads PDF to `<data_dir>/<publisher>/<journal>/<year>/<doi>.pdf`
-6. Updates database with availability status, source URL, attempt count, HTTP response, and file path
+1. Selects a random article with `availability IS NULL` (untried)
+2. Checks politeness intervals (global and per-publisher)
+3. Queries Unpaywall API — if not OA, marks `no-oa` and stops
+4. If OA: cascades through sources (Unpaywall → Semantic Scholar → OpenAlex → CORE → LingBuzz)
+5. For each source with a PDF URL: attempts download, verifies PDF magic bytes
+6. If HTML is received instead of PDF: extracts PDF links from the HTML and follows them
+7. On success: marks `oa` with file path. On failure of all sources: marks `no-oa`
 
 ### Anti-scraping measures
 
@@ -510,7 +549,8 @@ Configuration file for PDF scraping and integration scripts.
 | `data_dir` | Directory for downloaded PDFs (default: `data`) |
 | `manual_dir` | Directory for manually downloaded PDFs with DOI filenames (default: `manual`) |
 | `renaming_dir` | Directory for manually downloaded PDFs with title filenames (default: `renaming`) |
-| `unpaywall.mailto` | Email for Unpaywall API (or use `--mailto` flag) |
+| `core_api_key` | API key for CORE (free at https://core.ac.uk/api-keys/register). Optional — CORE is skipped if empty |
+| `unpaywall.mailto` | Email for Unpaywall/OpenAlex APIs (or use `--mailto` flag) |
 | `unpaywall.politeness_interval` | Seconds between any two download attempts |
 | `unpaywall.publisher_interval` | Seconds between attempts from the same publisher |
 | `unpaywall.max_attempts` | Give up after this many failed attempts per article |

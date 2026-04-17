@@ -450,11 +450,11 @@ def process_one(conn, config, dry_run=False):
             log.info("  Waiting %d seconds before next repository...", politeness_min)
             time.sleep(politeness_min)
 
-    # All active repositories failed for this DOI
-    log.info("  All %d active repositories failed for %s. No PDF saved.", len(active_repos), doi)
+    # All active repositories failed for this DOI — mark for manual download
+    log.info("  All %d active repositories failed for %s. Marked for manual download.", len(active_repos), doi)
     attempts += 1
     update_article(conn, doi,
-                  availability="no-oa",
+                  availability="manual",
                   source=None,
                   attempts=attempts,
                   response=0,
