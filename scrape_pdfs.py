@@ -175,7 +175,8 @@ def get_random_candidate(conn, years, journals):
     query = f"""
         SELECT doi, publisher, journal, year, title
         FROM articles
-        WHERE year >= ? AND year <= ?
+        WHERE type = 'article'
+          AND year >= ? AND year <= ?
           AND journal IN ({placeholders})
           AND file IS NULL
           AND availability IS NULL
@@ -1088,7 +1089,7 @@ def main():
     if args.reset_oa_attempts:
         cur = conn.execute("""
             UPDATE articles SET availability = NULL, attempts = 0
-            WHERE availability = 'no-oa' AND file IS NULL
+            WHERE type = 'article' AND availability = 'no-oa' AND file IS NULL
         """)
         conn.commit()
         log.info("Reset %d failed articles back to NULL for retry", cur.rowcount)

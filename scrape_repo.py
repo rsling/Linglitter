@@ -127,7 +127,8 @@ def get_random_nonoa_candidate(conn, years, journals):
     query = f"""
         SELECT doi, publisher, journal, year
         FROM articles
-        WHERE year >= ? AND year <= ?
+        WHERE type = 'article'
+          AND year >= ? AND year <= ?
           AND journal IN ({placeholders})
           AND file IS NULL
           AND availability = 'no-oa'

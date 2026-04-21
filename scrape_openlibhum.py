@@ -56,7 +56,7 @@ def get_journal_dois(conn, db_journal):
     """
     rows = conn.execute("""
         SELECT doi FROM articles
-        WHERE journal = ? AND file IS NULL
+        WHERE type = 'article' AND journal = ? AND file IS NULL
     """, (db_journal,)).fetchall()
     return {row[0] for row in rows}
 
@@ -66,7 +66,7 @@ def get_article_info(conn, doi):
     row = conn.execute("""
         SELECT doi, publisher, journal, year, attempts
         FROM articles
-        WHERE doi = ?
+        WHERE type = 'article' AND doi = ?
     """, (doi,)).fetchone()
     if row:
         return {

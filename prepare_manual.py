@@ -34,7 +34,7 @@ def get_manual_articles(conn):
     query = """
         SELECT doi, title, authors, journal, year, volume, issue, jump_url
         FROM articles
-        WHERE availability = 'manual' AND file IS NULL
+        WHERE type = 'article' AND availability = 'manual' AND file IS NULL
         ORDER BY journal, year, authors
     """
     return conn.execute(query).fetchall()
