@@ -172,19 +172,16 @@ def format_citation(authors, year, title, journal, volume, issue):
     return " ".join(parts)
 
 
-def build_pdf_path(data_dir, publisher, journal, year, doi):
+def build_pdf_path(pdf_dir, doi):
     """Build the full path for storing a PDF.
 
     Returns (absolute_path, relative_path) where relative_path is stored in DB.
     """
     safe_doi = encode_doi_for_filename(doi)
-    safe_publisher = re.sub(r'[/\\:*?"<>|]', "_", publisher) if publisher else "unknown"
-    safe_journal = re.sub(r'[/\\:*?"<>|]', "_", journal) if journal else "unknown"
+    filename = f"{safe_doi}.pdf"
+    absolute = Path(pdf_dir) / filename
 
-    relative = Path(safe_publisher) / safe_journal / str(year) / f"{safe_doi}.pdf"
-    absolute = Path(data_dir) / relative
-
-    return absolute, str(relative)
+    return absolute, filename
 
 
 def update_article(conn, doi, source, file_path):
@@ -275,7 +272,7 @@ def ask_user_no_match(pdf_path, filename, journal):
             print("Invalid choice. Please enter D or R.")
 
 
-def process_file(conn, pdf_path, journal, data_dir):
+def process_file(conn, pdf_path, journal, pdf_dir):
     """Process a single PDF file.
 
     Returns:
@@ -304,10 +301,10 @@ def process_file(conn, pdf_path, journal, data_dir):
         score, doi, title, authors, year, volume, issue, publisher = best_match
 
         # Build destination path
-        dest_abs, dest_rel = build_pdf_path(data_dir, publisher, journal, year, doi)
+        dest_abs, dest_rel = build_pdf_path(pdf_dir, doi)
 
         try:
-            # Ensure destination directory exists
+            # Ensure PDF directory exists
             dest_abs.parent.mkdir(parents=True, exist_ok=True)
 
             # Move the file
@@ -372,7 +369,7 @@ def main():
         return 1
 
     config = load_config(config_path)
-    data_dir = config.get("data_dir", "data")
+    pdf_dir = config.get("pdf_dir", "pdf")
     renaming_dir = config.get("renaming_dir", "renaming")
 
     # Connect to database
@@ -412,7 +409,7 @@ def main():
             log.info("Processing journal: %s (%d files)", journal, len(pdf_files))
 
             for pdf_path in sorted(pdf_files):
-                result = process_file(conn, pdf_path, journal, data_dir)
+                result = process_file(conn, pdf_path, journal, pdf_dir)
                 stats[result] += 1
 
     except KeyboardInterrupt:

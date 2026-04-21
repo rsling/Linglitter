@@ -154,6 +154,7 @@ def ensure_schema(conn):
         ("response", "INTEGER DEFAULT 0"),
         ("timestamp", "TEXT"),
         ("file", "TEXT"),
+        ("jump_url", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE articles ADD COLUMN {col} {coltype}")
@@ -206,7 +207,8 @@ def get_last_publisher_timestamp(conn, publisher):
     return row[0] if row and row[0] else None
 
 
-def update_article(conn, doi, availability, source, attempts, response, timestamp, file_path):
+def update_article(conn, doi, availability, source, attempts, response, timestamp,
+                   file_path, jump_url=None):
     """Update an article's PDF-related fields."""
     conn.execute("""
         UPDATE articles
@@ -215,9 +217,10 @@ def update_article(conn, doi, availability, source, attempts, response, timestam
             attempts = ?,
             response = ?,
             timestamp = ?,
-            file = ?
+            file = ?,
+            jump_url = ?
         WHERE doi = ?
-    """, (availability, source, attempts, response, timestamp, file_path, doi))
+    """, (availability, source, attempts, response, timestamp, file_path, jump_url, doi))
     conn.commit()
 
 
@@ -560,20 +563,16 @@ def encode_doi_for_filename(doi):
     return re.sub(unsafe_chars, "_", doi)
 
 
-def build_pdf_path(data_dir, publisher, journal, year, doi):
+def build_pdf_path(pdf_dir, doi):
     """Build the full path for storing a PDF.
 
     Returns (absolute_path, relative_path) where relative_path is stored in DB.
     """
     safe_doi = encode_doi_for_filename(doi)
-    # Also sanitize publisher and journal names for filesystem
-    safe_publisher = re.sub(r'[/\\:*?"<>|]', "_", publisher) if publisher else "unknown"
-    safe_journal = re.sub(r'[/\\:*?"<>|]', "_", journal) if journal else "unknown"
+    filename = f"{safe_doi}.pdf"
+    absolute = Path(pdf_dir) / filename
 
-    relative = Path(safe_publisher) / safe_journal / str(year) / f"{safe_doi}.pdf"
-    absolute = Path(data_dir) / relative
-
-    return absolute, str(relative)
+    return absolute, filename
 
 
 def _is_cloudflare_challenge(html):
@@ -850,7 +849,7 @@ def process_one(conn, config, dry_run=False):
     years = config["years"]
     journals = config["journals"]
     unpaywall_cfg = config["unpaywall"]
-    data_dir = config.get("data_dir", "data")
+    pdf_dir = config.get("pdf_dir", "pdf")
     core_api_key = config.get("core_api_key")
     mailto = unpaywall_cfg.get("mailto")
 
@@ -891,7 +890,7 @@ def process_one(conn, config, dry_run=False):
     attempts += 1
 
     # Build paths
-    abs_path, rel_path = build_pdf_path(data_dir, publisher, journal, year, doi)
+    abs_path, rel_path = build_pdf_path(pdf_dir, doi)
 
     # ------------------------------------------------------------------
     # Source 1: Unpaywall
@@ -909,6 +908,8 @@ def process_one(conn, config, dry_run=False):
     pdf_url = result["pdf_url"]
     landing_url = result["landing_url"]
     tried_urls = set()
+    # Collect the best landing page URL for jump_url (used by prepare_manual.py)
+    best_landing = landing_url
 
     if pdf_url:
         log.info("  [Unpaywall] PDF: %s", pdf_url)
@@ -930,6 +931,8 @@ def process_one(conn, config, dry_run=False):
     # ------------------------------------------------------------------
     log.info("  Trying Semantic Scholar…")
     s2_url, s2_landing = query_semantic_scholar(doi)
+    if s2_landing and not best_landing:
+        best_landing = s2_landing
     if s2_url and s2_url not in tried_urls:
         log.info("  [Semantic Scholar] PDF: %s", s2_url)
         tried_urls.add(s2_url)
@@ -951,6 +954,8 @@ def process_one(conn, config, dry_run=False):
     # ------------------------------------------------------------------
     log.info("  Trying OpenAlex…")
     oa_url, oa_landing = query_openalex(doi, mailto=mailto)
+    if oa_landing and not best_landing:
+        best_landing = oa_landing
     if oa_url and oa_url not in tried_urls:
         log.info("  [OpenAlex] PDF: %s", oa_url)
         tried_urls.add(oa_url)
@@ -973,6 +978,8 @@ def process_one(conn, config, dry_run=False):
     if core_api_key:
         log.info("  Trying CORE…")
         core_url, core_landing = query_core(doi, core_api_key)
+        if core_landing and not best_landing:
+            best_landing = core_landing
         if core_url and core_url not in tried_urls:
             log.info("  [CORE] PDF: %s", core_url)
             tried_urls.add(core_url)
@@ -995,6 +1002,8 @@ def process_one(conn, config, dry_run=False):
     if title:
         log.info("  Trying LingBuzz…")
         lb_url, lb_landing = search_lingbuzz(title)
+        if lb_landing and not best_landing:
+            best_landing = lb_landing
         if lb_url and lb_url not in tried_urls:
             log.info("  [LingBuzz] PDF: %s", lb_url)
             tried_urls.add(lb_url)
@@ -1015,10 +1024,12 @@ def process_one(conn, config, dry_run=False):
     # All sources exhausted — mark as no-oa so scrape_repo.py picks it up
     # ------------------------------------------------------------------
     log.warning("  All sources exhausted for %s", doi)
+    if best_landing:
+        log.info("  Saving jump URL: %s", best_landing)
     source_tried = pdf_url  # original Unpaywall URL, if any
     update_article(conn, doi, availability="no-oa", source=source_tried,
                   attempts=attempts, response=result.get("response_code", 0),
-                  timestamp=now, file_path=None)
+                  timestamp=now, file_path=None, jump_url=best_landing)
     return "failed", doi
 
 
@@ -1082,9 +1093,9 @@ def main():
         conn.commit()
         log.info("Reset %d failed articles back to NULL for retry", cur.rowcount)
 
-    # Ensure data directory exists
-    data_dir = Path(config.get("data_dir", "data"))
-    data_dir.mkdir(parents=True, exist_ok=True)
+    # Ensure PDF directory exists
+    pdf_dir = Path(config.get("pdf_dir", "pdf"))
+    pdf_dir.mkdir(parents=True, exist_ok=True)
 
     # Stats
     stats = {"downloaded": 0, "no-oa": 0, "failed": 0, "skipped": 0, "exhausted": 0}

@@ -175,19 +175,16 @@ def encode_doi_for_filename(doi):
     return re.sub(unsafe_chars, "_", doi)
 
 
-def build_pdf_path(data_dir, publisher, journal, year, doi):
+def build_pdf_path(pdf_dir, doi):
     """Build the full path for storing a PDF.
 
     Returns (absolute_path, relative_path) where relative_path is stored in DB.
     """
     safe_doi = encode_doi_for_filename(doi)
-    safe_publisher = re.sub(r'[/\\:*?"<>|]', "_", publisher) if publisher else "unknown"
-    safe_journal = re.sub(r'[/\\:*?"<>|]', "_", journal) if journal else "unknown"
+    filename = f"{safe_doi}.pdf"
+    absolute = Path(pdf_dir) / filename
 
-    relative = Path(safe_publisher) / safe_journal / str(year) / f"{safe_doi}.pdf"
-    absolute = Path(data_dir) / relative
-
-    return absolute, str(relative)
+    return absolute, filename
 
 
 def extract_download_link(html_content):
@@ -320,7 +317,7 @@ def process_one(conn, config, dry_run=False):
     years = config["years"]
     journals = config["journals"]
     local_cfg = config.get("local", {})
-    data_dir = config.get("data_dir", "data")
+    pdf_dir = config.get("pdf_dir", "pdf")
 
     repos = local_cfg.get("repos", [])
     if not repos:
@@ -359,7 +356,7 @@ def process_one(conn, config, dry_run=False):
     now = datetime.now().isoformat()
 
     # Build paths
-    abs_path, rel_path = build_pdf_path(data_dir, publisher, journal, year, doi)
+    abs_path, rel_path = build_pdf_path(pdf_dir, doi)
 
     # Try each active repository in sequence
     for i, repo_url in enumerate(active_repos):
@@ -505,9 +502,9 @@ def main():
 
     conn = sqlite3.connect(args.db)
 
-    # Ensure data directory exists
-    data_dir = Path(config.get("data_dir", "data"))
-    data_dir.mkdir(parents=True, exist_ok=True)
+    # Ensure PDF directory exists
+    pdf_dir = Path(config.get("pdf_dir", "pdf"))
+    pdf_dir.mkdir(parents=True, exist_ok=True)
 
     # Get politeness settings
     politeness_min = local_cfg.get("politeness_min", 180)

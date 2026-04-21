@@ -186,16 +186,13 @@ def encode_doi_for_filename(doi):
     return re.sub(unsafe_chars, "_", doi)
 
 
-def build_pdf_path(data_dir, publisher, journal, year, doi):
+def build_pdf_path(pdf_dir, doi):
     """Build the full path for storing a PDF."""
     safe_doi = encode_doi_for_filename(doi)
-    safe_publisher = re.sub(r'[/\\:*?"<>|]', "_", publisher) if publisher else "unknown"
-    safe_journal = re.sub(r'[/\\:*?"<>|]', "_", journal) if journal else "unknown"
+    filename = f"{safe_doi}.pdf"
+    absolute = Path(pdf_dir) / filename
 
-    relative = Path(safe_publisher) / safe_journal / str(year) / f"{safe_doi}.pdf"
-    absolute = Path(data_dir) / relative
-
-    return absolute, str(relative)
+    return absolute, filename
 
 
 def download_pdf(pdf_url, dest_path, referer_url, session, timeout=60):
@@ -263,7 +260,7 @@ def crawl_journal(conn, config, journal_cfg, session, dry_run=False, limit=None)
     article_prefix = journal_cfg["article_prefix"]
     db_journal = journal_cfg["db_journal"]
     politeness = journal_cfg.get("politeness", 15)
-    data_dir = config.get("data_dir", "data")
+    pdf_dir = config.get("pdf_dir", "pdf")
 
     # Get DOIs we need to download
     needed_dois = get_journal_dois(conn, db_journal)
@@ -365,9 +362,7 @@ def crawl_journal(conn, config, journal_cfg, session, dry_run=False, limit=None)
                     continue
 
                 # Build paths
-                abs_path, rel_path = build_pdf_path(
-                    data_dir, article["publisher"], article["journal"], article["year"], doi
-                )
+                abs_path, rel_path = build_pdf_path(pdf_dir, doi)
 
                 # Download PDF
                 now = datetime.now().isoformat()
@@ -479,9 +474,9 @@ def main():
 
     conn = sqlite3.connect(args.db)
 
-    # Ensure data directory exists
-    data_dir = Path(config.get("data_dir", "data"))
-    data_dir.mkdir(parents=True, exist_ok=True)
+    # Ensure PDF directory exists
+    pdf_dir = Path(config.get("pdf_dir", "pdf"))
+    pdf_dir.mkdir(parents=True, exist_ok=True)
 
     # Create session
     session = requests.Session()

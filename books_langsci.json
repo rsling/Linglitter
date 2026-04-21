@@ -1,0 +1,90 @@
+{ "publishers": [
+  { "name": "Language Science Press",
+    "model": "OA-only",
+    "series": [
+      { 
+        "title": "Computational Models of Language Evolution",
+        "url": "https://langsci-press.org/catalog/series/cmle"
+      },
+      { 
+        "title": "Conceptual Foundations of Language Science",
+        "url": "https://langsci-press.org/catalog/series/cfls"
+      },
+      { 
+        "title": "Current Issues in Bilingualism",
+        "url": "https://langsci-press.org/catalog/series/cib"
+      },
+      { 
+        "title": "Empirically Oriented Theoretical Morphology and Syntax",
+        "url": "https://langsci-press.org/catalog/series/eotms"
+      },
+      { 
+        "title": "Frame-Based Approaches to Semantics",
+        "url": "https://langsci-press.org/catalog/series/frats"
+      },
+      { 
+        "title": "History and Philosophy of the Language Sciences",
+        "url": "https://langsci-press.org/catalog/series/hpls"
+      },
+      { "title": "Implemented Grammars",
+        "url": "https://langsci-press.org/catalog/series/eotms-ig"
+      },
+      { "title": "Language Variation",
+        "url": "https://langsci-press.org/catalog/series/lv"
+      },
+      { "title": "Morphological Investigations",
+        "url": "https://langsci-press.org/catalog/series/mi"
+      },
+      { 
+        "title": "Open Generative Syntax",
+        "url": "https://langsci-press.org/catalog/series/ogs"
+      },
+      { 
+        "title": "Open Germanic Linguistics",
+        "url": "https://langsci-press.org/catalog/series/ogl"
+      },
+      { 
+        "title": "Open Romance Linguistics",
+        "url": "https://langsci-press.org/catalog/series/orl"
+      },
+      { 
+        "title": "Open Slavic Linguistics",
+        "url": "https://langsci-press.org/catalog/series/osl"
+      },
+      { 
+        "title": "Phraseology and Multiword Expressions",
+        "url": "https://langsci-press.org/catalog/series/pmwe"
+      },
+      { 
+        "title": "Research on Comparative Grammar",
+        "url": "https://langsci-press.org/catalog/series/rcg"
+      },
+      { 
+        "title": "Spoken Language Research",
+        "url": "https://langsci-press.org/catalog/series/slr"
+      },
+      { 
+        "title": "Studies in Diversity Linguistics",
+        "url": "https://langsci-press.org/catalog/series/sidl"
+      },
+      { 
+        "title": "Studies in Laboratory Phonology",
+        "url": "https://langsci-press.org/catalog/series/silp"
+      },
+      { 
+        "title": "Textbooks in Language Sciences",
+        "url": "https://langsci-press.org/catalog/series/tbls"
+      },
+      { 
+        "title": "Topics at the Grammar-Discourse Interface",
+        "url": "https://langsci-press.org/catalog/series/tgdi"
+      },
+      { 
+        "title": "Topics in Phonological Diversity",
+        "url": "https://langsci-press.org/catalog/series/tpd"
+      }
+    ]
+  }
+  ]
+}
+

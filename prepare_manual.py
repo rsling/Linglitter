@@ -32,7 +32,7 @@ def encode_doi_for_filename(doi):
 def get_manual_articles(conn):
     """Get all articles marked for manual download."""
     query = """
-        SELECT doi, title, authors, journal, year, volume, issue
+        SELECT doi, title, authors, journal, year, volume, issue, jump_url
         FROM articles
         WHERE availability = 'manual' AND file IS NULL
         ORDER BY journal, year, authors
@@ -193,16 +193,16 @@ def generate_html(articles, output_path):
         <tbody>
 """
 
-    for i, (doi, title, authors, journal, year, volume, issue) in enumerate(articles, 1):
+    for i, (doi, title, authors, journal, year, volume, issue, jump_url) in enumerate(articles, 1):
         citation = format_citation(authors, year, title, journal, volume, issue)
-        doi_url = f"https://doi.org/{html.escape(doi)}"
+        link_url = html.escape(jump_url) if jump_url else f"https://doi.org/{html.escape(doi)}"
         encoded_doi = encode_doi_for_filename(doi)
         filename = f"{encoded_doi}.pdf"
 
         html_content += f"""            <tr data-index="{i}">
                 <td>{i}</td>
                 <td class="citation">{citation}</td>
-                <td><a href="{doi_url}" target="_blank" rel="noopener" class="doi-link" data-filename="{html.escape(filename)}" onclick="handleClick(this, {i})">{doi_url}</a></td>
+                <td><a href="{link_url}" target="_blank" rel="noopener" class="doi-link" data-filename="{html.escape(filename)}" onclick="handleClick(this, {i})">{link_url}</a></td>
                 <td class="filename">{html.escape(filename)}</td>
                 <td><span class="status-dot" id="dot-{i}"></span></td>
             </tr>

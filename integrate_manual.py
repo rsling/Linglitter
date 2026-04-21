@@ -4,7 +4,7 @@ Integrate manually downloaded PDFs into the data directory structure.
 
 Scans the manual_dir for PDF files, matches them to articles in linglitter.db
 by decoding the filename to a DOI, moves matched files to the appropriate
-location under data_dir, and updates the database.
+location under pdf_dir, and updates the database.
 
 Usage:
     python integrate_manual.py
@@ -57,19 +57,16 @@ def build_doi_lookup(conn):
     return lookup
 
 
-def build_pdf_path(data_dir, publisher, journal, year, doi):
+def build_pdf_path(pdf_dir, doi):
     """Build the full path for storing a PDF.
 
     Returns (absolute_path, relative_path) where relative_path is stored in DB.
     """
     safe_doi = encode_doi_for_filename(doi)
-    safe_publisher = re.sub(r'[/\\:*?"<>|]', "_", publisher) if publisher else "unknown"
-    safe_journal = re.sub(r'[/\\:*?"<>|]', "_", journal) if journal else "unknown"
+    filename = f"{safe_doi}.pdf"
+    absolute = Path(pdf_dir) / filename
 
-    relative = Path(safe_publisher) / safe_journal / str(year) / f"{safe_doi}.pdf"
-    absolute = Path(data_dir) / relative
-
-    return absolute, str(relative)
+    return absolute, filename
 
 
 def update_article(conn, doi, source, file_path):
@@ -167,7 +164,7 @@ def main():
         return 1
 
     config = load_config(config_path)
-    data_dir = config.get("data_dir", "data")
+    pdf_dir = config.get("pdf_dir", "pdf")
     manual_dir = config.get("manual_dir", "manual")
 
     # Connect to database
@@ -212,7 +209,7 @@ def main():
         log.info("Matched: %s -> %s", pdf_path.name, doi)
 
         # Build destination path
-        dest_abs, dest_rel = build_pdf_path(data_dir, publisher, journal, year, doi)
+        dest_abs, dest_rel = build_pdf_path(pdf_dir, doi)
 
         if args.dry_run:
             log.info("  [DRY RUN] Would move to: %s", dest_rel)

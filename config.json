@@ -1,5 +1,5 @@
 {
-  "years": [2021, 2025],
+  "years": [2015, 2025],
   "journals": [
     "Cognitive Linguistics",
     "Cognitive Linguistic Studies",
@@ -52,7 +52,7 @@
     "Trends in Cognitive Sciences",
     "Syntactic Theory and Research"
   ],
-  "data_dir": "data",
+  "pdf_dir": "pdf",
   "manual_dir": "manual",
   "renaming_dir": "renaming",
   "quarantine_dir": "quarantine",
